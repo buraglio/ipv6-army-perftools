@@ -1,6 +1,6 @@
 # ipv6perftest
 
-A lightweight command-line tool for testing IPv4/IPv6 connectivity from remote test points. Designed for use with [NLNOG RING](https://ring.nlnog.net/) nodes and similar distributed network infrastructure.
+A lightweight command-line tool for testing IPv4/IPv6 connectivity from remote test points. Designed for use with headless nodes and similar distributed network infrastructure.
 
 ## Overview
 
