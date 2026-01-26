@@ -2,6 +2,8 @@
 
 A lightweight command-line tool for testing IPv4/IPv6 connectivity from remote test points. Designed for use with headless nodes and similar distributed network infrastructure.
 
+Available as both a **Bash script** (portable, no compilation) and a **Go application** (single binary, compile-time secrets).
+
 ## Overview
 
 `ipv6perftest` triggers IPv6 connectivity tests via the [ipv6.army](https://ipv6.army) API and optionally submits results to GitHub repositories. It auto-detects network information including:
@@ -11,7 +13,16 @@ A lightweight command-line tool for testing IPv4/IPv6 connectivity from remote t
 - ASN (Autonomous System Number)
 - Geographic location
 
+## Implementations
+
+| Version | File | Use Case |
+|---------|------|----------|
+| **Bash** | `ipv6perftest` (script) | Portable, works anywhere with bash+curl |
+| **Go** | `main.go` | Single static binary, compile-time secrets, cross-platform |
+
 ## Requirements
+
+### Bash Version
 
 **Required:**
 - `bash` (4.0+)
@@ -22,7 +33,23 @@ A lightweight command-line tool for testing IPv4/IPv6 connectivity from remote t
 - `gh` (GitHub CLI) - for `--submit-gh`
 - `git` - for `--submit-git`
 
+### Go Version
+
+**Build requirements:**
+
+- Go 1.21+
+
+**Runtime:**
+
+- Single static binary (no dependencies)
+
+**Optional (for GitHub submission):**
+- `gh` (GitHub CLI) - for `--submit-gh`
+- `git` - for `--submit-git`
+
 ## Installation
+
+### Option 1: Bash Script (Simple)
 
 ```bash
 # Clone the repository
@@ -34,6 +61,78 @@ chmod +x ipv6perftest
 
 # Optional: Add to PATH
 sudo ln -s $(pwd)/ipv6perftest /usr/local/bin/ipv6perftest
+```
+
+### Option 2: Go Binary (Recommended for Distribution)
+
+```bash
+# Clone and build
+git clone https://github.com/yourusername/ipv6-army-perftools.git
+cd ipv6-army-perftools
+
+# Simple build
+make build
+
+# Or build with compiled-in defaults (secrets baked into binary)
+make build API_TOKEN=your-token GH_REPO=myuser/results LOCATION="NYC,US"
+
+# Install to system
+make install
+```
+
+### Option 3: Pre-built Go Binary with Secrets
+
+Build a self-contained binary with all secrets compiled in:
+
+```bash
+# Build with all configuration embedded
+go build -ldflags "\
+  -X main.defaultAPIToken=your-ipv6-army-token \
+  -X main.defaultGHToken=ghp_your_github_pat \
+  -X main.defaultGHRepo=myuser/ipv6-results \
+  -X main.defaultLocation=Amsterdam,NL \
+  -s -w" \
+  -o ipv6perftest-configured .
+
+# Now distribute the binary - no environment variables needed!
+./ipv6perftest-configured --wait --submit-gh
+```
+
+### Cross-Compilation
+
+Build for multiple platforms:
+
+```bash
+# Build for all supported platforms
+make build-all API_TOKEN=xxx
+
+# Outputs in build/ directory:
+#   ipv6perftest-linux-amd64
+#   ipv6perftest-linux-arm64
+#   ipv6perftest-linux-arm
+#   ipv6perftest-darwin-amd64
+#   ipv6perftest-darwin-arm64
+#   ipv6perftest-freebsd-amd64
+#   ipv6perftest-windows-amd64.exe
+```
+
+## Configuration Precedence (Go Version)
+
+The Go version supports three configuration layers:
+
+1. **Command-line flags** (highest priority)
+2. **Environment variables**
+3. **Compiled defaults** (lowest priority)
+
+This allows you to:
+
+- Distribute binaries with sensible defaults
+- Override specific values via environment
+- Override everything via flags
+
+```bash
+# Example: Binary has compiled API_TOKEN, but override location at runtime
+./ipv6perftest --location "Frankfurt,DE" --wait
 ```
 
 ## Quick Start
