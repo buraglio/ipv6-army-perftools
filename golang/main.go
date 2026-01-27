@@ -35,14 +35,15 @@ var (
 
 // Compile-time defaults (set via ldflags: -X main.defaultAPIToken=xxx)
 var (
-	defaultAPIToken  string
-	defaultAPIURL    string
-	defaultGHToken   string
-	defaultGHRepo    string
-	defaultGHMethod  string
-	defaultGitRepo   string
-	defaultGitBranch string
-	defaultLocation  string
+	defaultAPIToken   string
+	defaultAPIURL     string
+	defaultGHToken    string
+	defaultGHRepo     string
+	defaultGHMethod   string
+	defaultGitRepo    string
+	defaultGitBranch  string
+	defaultLocation   string
+	defaultLocalTest  string // Set to "true" to make local tests the default
 )
 
 // Config holds all configuration values
@@ -57,8 +58,10 @@ type Config struct {
 
 	// Behavior
 	Wait         bool
+	LocalTest    bool // Run local connectivity tests instead of API trigger
 	MaxWaitTime  time.Duration
 	PollInterval time.Duration
+	Timeout      time.Duration // Per-site test timeout
 
 	// GitHub submission
 	SubmitGH  bool
@@ -73,6 +76,45 @@ type Config struct {
 	// Display
 	NoColor bool
 	Verbose bool
+}
+
+// SiteTest represents a single site connectivity test
+type SiteTest struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	IPv4Success bool   `json:"ipv4Success"`
+	IPv6Success bool   `json:"ipv6Success"`
+	IPv4Latency int64  `json:"ipv4LatencyMs,omitempty"`
+	IPv6Latency int64  `json:"ipv6LatencyMs,omitempty"`
+	IPv4Error   string `json:"ipv4Error,omitempty"`
+	IPv6Error   string `json:"ipv6Error,omitempty"`
+}
+
+// Common dual-stack sites to test
+var testSites = []struct {
+	Name string
+	URL  string
+}{
+	{"Google", "https://www.google.com"},
+	{"Cloudflare", "https://www.cloudflare.com"},
+	{"Facebook", "https://www.facebook.com"},
+	{"Netflix", "https://www.netflix.com"},
+	{"Apple", "https://www.apple.com"},
+	{"Microsoft", "https://www.microsoft.com"},
+	{"Amazon", "https://www.amazon.com"},
+	{"Wikipedia", "https://www.wikipedia.org"},
+	{"Twitter/X", "https://www.x.com"},
+	{"LinkedIn", "https://www.linkedin.com"},
+	{"GitHub", "https://github.com"},
+	{"Reddit", "https://www.reddit.com"},
+	{"Yahoo", "https://www.yahoo.com"},
+	{"Bing", "https://www.bing.com"},
+	{"YouTube", "https://www.youtube.com"},
+	{"Instagram", "https://www.instagram.com"},
+	{"WhatsApp", "https://www.whatsapp.com"},
+	{"Zoom", "https://zoom.us"},
+	{"Slack", "https://slack.com"},
+	{"Dropbox", "https://www.dropbox.com"},
 }
 
 // TestPointInfo holds auto-detected network information
@@ -154,10 +196,13 @@ func parseFlags() *Config {
 	cfg := &Config{
 		MaxWaitTime:  5 * time.Minute,
 		PollInterval: 10 * time.Second,
+		Timeout:      10 * time.Second,
 	}
 
 	// Define flags
-	flag.BoolVar(&cfg.Wait, "wait", false, "Wait for test results and display them")
+	flag.BoolVar(&cfg.LocalTest, "local", false, "Run local connectivity tests (no API required)")
+	flag.BoolVar(&cfg.LocalTest, "l", false, "Run local connectivity tests (shorthand)")
+	flag.BoolVar(&cfg.Wait, "wait", false, "Wait for test results and display them (API mode only)")
 	flag.BoolVar(&cfg.Wait, "w", false, "Wait for test results (shorthand)")
 
 	flag.BoolVar(&cfg.SubmitGH, "submit-gh", false, "Submit results via GitHub CLI (gh)")
@@ -183,10 +228,13 @@ func parseFlags() *Config {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "ipv6perftest - IPv6 Performance Test Tool\n\n")
 		fmt.Fprintf(os.Stderr, "Usage: %s [OPTIONS]\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Modes:\n")
+		fmt.Fprintf(os.Stderr, "  --local, -l      Run local connectivity tests (no API required)\n")
+		fmt.Fprintf(os.Stderr, "  (default)        Trigger test via API (requires IPV6_ARMY_TOKEN)\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nEnvironment variables:\n")
-		fmt.Fprintf(os.Stderr, "  IPV6_ARMY_TOKEN  API authentication token\n")
+		fmt.Fprintf(os.Stderr, "  IPV6_ARMY_TOKEN  API authentication token (not needed with --local)\n")
 		fmt.Fprintf(os.Stderr, "  LOCATION         Geographic location\n")
 		fmt.Fprintf(os.Stderr, "  TEST_POINT_ID    Custom test point identifier\n")
 		fmt.Fprintf(os.Stderr, "  API_URL          Override API endpoint\n")
@@ -195,9 +243,9 @@ func parseFlags() *Config {
 		fmt.Fprintf(os.Stderr, "  GIT_REPO         Default repo URL for --submit-git\n")
 		fmt.Fprintf(os.Stderr, "  GIT_BRANCH       Default branch for --submit-git\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  %s --wait\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --submit-gh --gh-repo myuser/results --gh-method issue\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "  %s --submit-api --gh-repo myuser/results --gh-token ghp_xxx\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --local                     # Run local tests, no API needed\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --local --submit-gh --gh-repo user/repo\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s --wait                      # Trigger API and wait for results\n", os.Args[0])
 	}
 
 	flag.Parse()
@@ -205,6 +253,11 @@ func parseFlags() *Config {
 	if *showVersion {
 		fmt.Printf("ipv6perftest %s (built %s)\n", version, buildTime)
 		os.Exit(0)
+	}
+
+	// Apply local test default if compiled in
+	if !cfg.LocalTest && defaultLocalTest == "true" {
+		cfg.LocalTest = true
 	}
 
 	// Apply configuration precedence: flag > env > compiled default
@@ -240,14 +293,19 @@ func orDefault(val, def string) string {
 }
 
 func run(cfg *Config) error {
-	// Validate required configuration
-	if cfg.APIToken == "" {
-		return fmt.Errorf("API token is required. Set IPV6_ARMY_TOKEN environment variable or use --api-token flag")
-	}
-
 	// Validate GitHub submission options
 	if err := validateGitHubOptions(cfg); err != nil {
 		return err
+	}
+
+	// Local test mode
+	if cfg.LocalTest {
+		return runLocalTests(cfg)
+	}
+
+	// API mode - requires token
+	if cfg.APIToken == "" {
+		return fmt.Errorf("API token is required. Set IPV6_ARMY_TOKEN environment variable, use --api-token flag, or use --local for local tests")
 	}
 
 	fmt.Println("IPv6.army Remote Test Point Trigger")
@@ -328,6 +386,210 @@ func run(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// runLocalTests executes local connectivity tests to common sites
+func runLocalTests(cfg *Config) error {
+	fmt.Println("IPv6 Connectivity Test Tool")
+	fmt.Println("===========================")
+	fmt.Println()
+
+	// Auto-detect test point information
+	fmt.Printf("%sDetecting test point information...%s\n", c.Yellow, c.Reset)
+
+	info, err := detectTestPointInfo(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to detect test point info: %w", err)
+	}
+
+	printTestPointInfo(info, cfg)
+
+	fmt.Println()
+	fmt.Printf("%sTesting connectivity to %d sites...%s\n", c.Yellow, len(testSites), c.Reset)
+	fmt.Println()
+
+	// Run tests
+	siteResults := make([]SiteTest, 0, len(testSites))
+	var ipv4Successes, ipv6Successes int
+
+	for i, site := range testSites {
+		fmt.Printf("\r  Testing %d/%d: %-20s", i+1, len(testSites), site.Name)
+
+		result := testSiteConnectivity(cfg, site.Name, site.URL)
+		siteResults = append(siteResults, result)
+
+		if result.IPv4Success {
+			ipv4Successes++
+		}
+		if result.IPv6Success {
+			ipv6Successes++
+		}
+	}
+
+	fmt.Printf("\r%s\r", strings.Repeat(" ", 60)) // Clear line
+
+	// Calculate score (weighted: IPv6 worth more)
+	totalSites := len(testSites)
+	ipv4Pct := float64(ipv4Successes) / float64(totalSites)
+	ipv6Pct := float64(ipv6Successes) / float64(totalSites)
+	// Score: 40% IPv4 + 60% IPv6 (IPv6 weighted higher)
+	score := int((ipv4Pct*0.4 + ipv6Pct*0.6) * 10)
+
+	// Build result
+	result := &TestResult{
+		TestPointID:   info.TestPointID,
+		Location:      info.Location,
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		Score:         score,
+		IPv4Success:   ipv4Successes > 0,
+		IPv6Success:   ipv6Successes > 0,
+		SiteTestCount: totalSites,
+		ASN:           info.ASN,
+		IPv4Prefix:    info.IPv4Obfuscated,
+		IPv6Prefix:    info.IPv6Obfuscated,
+	}
+
+	// Print detailed results
+	printLocalResults(result, siteResults, ipv4Successes, ipv6Successes, cfg.Verbose)
+
+	// Submit results if enabled
+	if cfg.SubmitGH || cfg.SubmitGit || cfg.SubmitAPI {
+		fmt.Println()
+		runSubmissions(cfg, result)
+	}
+
+	return nil
+}
+
+// testSiteConnectivity tests both IPv4 and IPv6 connectivity to a site
+func testSiteConnectivity(cfg *Config, name, url string) SiteTest {
+	result := SiteTest{
+		Name: name,
+		URL:  url,
+	}
+
+	// Test IPv4
+	start := time.Now()
+	err := testConnectivity("tcp4", url, cfg.Timeout)
+	if err == nil {
+		result.IPv4Success = true
+		result.IPv4Latency = time.Since(start).Milliseconds()
+	} else {
+		result.IPv4Error = err.Error()
+	}
+
+	// Test IPv6
+	start = time.Now()
+	err = testConnectivity("tcp6", url, cfg.Timeout)
+	if err == nil {
+		result.IPv6Success = true
+		result.IPv6Latency = time.Since(start).Milliseconds()
+	} else {
+		result.IPv6Error = err.Error()
+	}
+
+	return result
+}
+
+// testConnectivity tests HTTP connectivity over a specific network
+func testConnectivity(network, url string, timeout time.Duration) error {
+	dialer := &net.Dialer{Timeout: timeout}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return dialer.DialContext(ctx, network, addr)
+		},
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Read a small amount to ensure connection works
+	buf := make([]byte, 1024)
+	_, _ = resp.Body.Read(buf)
+
+	return nil
+}
+
+// printLocalResults displays the local test results
+func printLocalResults(result *TestResult, siteResults []SiteTest, ipv4Success, ipv6Success int, verbose bool) {
+	fmt.Println()
+	fmt.Printf("%s✓ Tests completed!%s\n", c.Green, c.Reset)
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Printf("%sTEST RESULTS%s\n", c.Cyan, c.Reset)
+	fmt.Println("═══════════════════════════════════════════════════════════")
+	fmt.Println()
+
+	fmt.Printf("  %sScore:%s        %d / 10\n", c.Blue, c.Reset, result.Score)
+
+	// IPv4 status
+	ipv4Status := fmt.Sprintf("%sNo connectivity%s", c.Red, c.Reset)
+	if result.IPv4Success {
+		ipv4Status = fmt.Sprintf("%s%d/%d sites reachable%s", c.Green, ipv4Success, result.SiteTestCount, c.Reset)
+	}
+	fmt.Printf("  %sIPv4:%s         %s\n", c.Blue, c.Reset, ipv4Status)
+
+	// IPv6 status
+	ipv6Status := fmt.Sprintf("%sNo connectivity%s", c.Red, c.Reset)
+	if result.IPv6Success {
+		ipv6Status = fmt.Sprintf("%s%d/%d sites reachable%s", c.Green, ipv6Success, result.SiteTestCount, c.Reset)
+	}
+	fmt.Printf("  %sIPv6:%s         %s\n", c.Blue, c.Reset, ipv6Status)
+
+	fmt.Printf("  %sSites tested:%s %d\n", c.Blue, c.Reset, result.SiteTestCount)
+	fmt.Printf("  %sTimestamp:%s    %s\n", c.Blue, c.Reset, result.Timestamp)
+
+	// Verbose output: show per-site results
+	if verbose {
+		fmt.Println()
+		fmt.Println("─────────────────────────────────────────────────────────────")
+		fmt.Printf("%sPer-site Results:%s\n", c.Cyan, c.Reset)
+		fmt.Println("─────────────────────────────────────────────────────────────")
+		fmt.Println()
+		fmt.Printf("  %-20s %s  %s\n", "Site", "IPv4", "IPv6")
+		fmt.Printf("  %-20s %s  %s\n", "────", "────", "────")
+
+		for _, site := range siteResults {
+			ipv4 := fmt.Sprintf("%s✗%s", c.Red, c.Reset)
+			if site.IPv4Success {
+				ipv4 = fmt.Sprintf("%s✓%s %4dms", c.Green, c.Reset, site.IPv4Latency)
+			}
+
+			ipv6 := fmt.Sprintf("%s✗%s", c.Red, c.Reset)
+			if site.IPv6Success {
+				ipv6 = fmt.Sprintf("%s✓%s %4dms", c.Green, c.Reset, site.IPv6Latency)
+			}
+
+			fmt.Printf("  %-20s %s  %s\n", site.Name, ipv4, ipv6)
+		}
+	}
+
+	fmt.Println()
+	fmt.Println("═══════════════════════════════════════════════════════════")
+
+	// Summary
+	fmt.Println()
+	if ipv6Success == 0 && ipv4Success > 0 {
+		fmt.Printf("%s⚠ No IPv6 connectivity detected. Your network may be IPv4-only.%s\n", c.Yellow, c.Reset)
+	} else if ipv6Success > 0 && ipv6Success < ipv4Success {
+		fmt.Printf("%s⚠ Partial IPv6 connectivity. Some sites may not have IPv6 or your connection is unstable.%s\n", c.Yellow, c.Reset)
+	} else if ipv6Success >= ipv4Success && ipv6Success > 0 {
+		fmt.Printf("%s✓ Good IPv6 connectivity!%s\n", c.Green, c.Reset)
+	}
 }
 
 func validateGitHubOptions(cfg *Config) error {
@@ -720,7 +982,7 @@ func submitViaGHCLI(cfg *Config, result *TestResult) {
 `+"```json\n%s\n```"+`
 
 ---
-*Submitted automatically by ipv6perftest*`, result.TestPointID, result.Location, result.Timestamp, string(resultJSON))
+*Submitted by ipv6perftest*`, result.TestPointID, result.Location, result.Timestamp, string(resultJSON))
 
 	if cfg.GHMethod == "issue" {
 		cmd := exec.Command("gh", "issue", "create", "--repo", cfg.GHRepo, "--title", title, "--body", body)
@@ -860,7 +1122,7 @@ func submitViaGitHubAPI(cfg *Config, result *TestResult) {
 `+"```json\n%s\n```"+`
 
 ---
-*Submitted automatically by ipv6perftest*`, result.TestPointID, result.Location, result.Timestamp, string(resultJSON))
+*Submitted by ipv6perftest*`, result.TestPointID, result.Location, result.Timestamp, string(resultJSON))
 
 	payload := map[string]interface{}{
 		"title":  title,

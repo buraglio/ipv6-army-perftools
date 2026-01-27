@@ -35,6 +35,7 @@ GH_METHOD ?=
 GIT_REPO ?=
 GIT_BRANCH ?=
 LOCATION ?=
+LOCAL_TEST ?=
 
 # Build ldflags
 LDFLAGS := -s -w
@@ -65,6 +66,9 @@ ifneq ($(GIT_BRANCH),)
 endif
 ifneq ($(LOCATION),)
 	LDFLAGS += -X main.defaultLocation=$(LOCATION)
+endif
+ifneq ($(LOCAL_TEST),)
+	LDFLAGS += -X main.defaultLocalTest=$(LOCAL_TEST)
 endif
 
 # Platforms for cross-compilation
@@ -169,6 +173,7 @@ help:
 	@echo "  checksums        Generate SHA256 checksums"
 	@echo ""
 	@echo "Variables (set on command line or edit Makefile):"
+	@echo "  LOCAL_TEST       Set to 'true' to make local tests default"
 	@echo "  API_TOKEN        ipv6.army API token"
 	@echo "  API_URL          Override API endpoint"
 	@echo "  GH_TOKEN         GitHub PAT for API submission"
@@ -180,6 +185,6 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build"
+	@echo "  make build LOCAL_TEST=true LOCATION='NYC,US'"
 	@echo "  make build API_TOKEN=xxx GH_REPO=myuser/results"
-	@echo "  make build-all API_TOKEN=xxx LOCATION='NYC,US'"
 	@echo "  make install"

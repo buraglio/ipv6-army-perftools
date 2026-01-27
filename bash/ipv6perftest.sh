@@ -196,7 +196,7 @@ $result_data
 \`\`\`
 
 ---
-*Submitted automatically by ipv6perftest*"
+*Submitted by ipv6perftest*"
 
     if [ "$GH_METHOD" = "issue" ]; then
         if gh issue create --repo "$GH_REPO" --title "$title" --body "$body" 2>/dev/null; then
@@ -277,7 +277,7 @@ submit_via_github_api() {
     # Escape the result data for JSON
     local escaped_data=$(echo "$result_data" | sed 's/"/\\"/g' | tr '\n' ' ')
 
-    local body="## IPv6 Connectivity Test Results\n\n**Test Point:** $TEST_POINT_ID\n**Location:** $LOCATION\n**Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n### Results\n\`\`\`json\n$escaped_data\n\`\`\`\n\n---\n*Submitted automatically by ipv6perftest*"
+    local body="## IPv6 Connectivity Test Results\n\n**Test Point:** $TEST_POINT_ID\n**Location:** $LOCATION\n**Timestamp:** $(date -u +%Y-%m-%dT%H:%M:%SZ)\n\n### Results\n\`\`\`json\n$escaped_data\n\`\`\`\n\n---\n*Submitted by ipv6perftest*"
 
     local api_response=$(curl -s -w "\n%{http_code}" -X POST \
         "https://api.github.com/repos/$GH_REPO/issues" \
