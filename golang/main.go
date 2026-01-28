@@ -541,22 +541,18 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 		siteTests[i] = siteData
 	}
 
-	// Build payload matching ipv6.army API structure
+	// Build payload matching ipv6.army API structure (flat format)
 	payload := map[string]interface{}{
 		"testPointId": result.TestPointID,
-		"testPoint": map[string]interface{}{
-			"location":   result.Location,
-			"asn":        result.ASN,
-			"ipv4Prefix": result.IPv4Prefix,
-			"ipv6Prefix": result.IPv6Prefix,
-		},
-		"results": map[string]interface{}{
-			"score":       result.Score,
-			"ipv4Success": result.IPv4Success,
-			"ipv6Success": result.IPv6Success,
-			"siteTests":   siteTests,
-		},
-		"timestamp": result.Timestamp,
+		"location":    result.Location,
+		"asn":         result.ASN,
+		"ipv4Prefix":  result.IPv4Prefix,
+		"ipv6Prefix":  result.IPv6Prefix,
+		"score":       result.Score,
+		"ipv4Success": result.IPv4Success,
+		"ipv6Success": result.IPv6Success,
+		"siteTests":   siteTests,
+		"timestamp":   result.Timestamp,
 	}
 
 	jsonData, err := json.Marshal(payload)
