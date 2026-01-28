@@ -57,11 +57,12 @@ type Config struct {
 	Location    string
 
 	// Behavior
-	Wait         bool
-	LocalTest    bool // Run local connectivity tests instead of API trigger
-	MaxWaitTime  time.Duration
-	PollInterval time.Duration
-	Timeout      time.Duration // Per-site test timeout
+	Wait          bool
+	LocalTest     bool // Run local connectivity tests instead of API trigger
+	SubmitResults bool // Submit local test results to ipv6.army API
+	MaxWaitTime   time.Duration
+	PollInterval  time.Duration
+	Timeout       time.Duration // Per-site test timeout
 
 	// GitHub submission
 	SubmitGH  bool
@@ -207,6 +208,7 @@ func parseFlags() *Config {
 	flag.BoolVar(&cfg.LocalTest, "l", false, "Run local connectivity tests (shorthand)")
 	flag.BoolVar(&cfg.Wait, "wait", false, "Wait for test results and display them (API mode only)")
 	flag.BoolVar(&cfg.Wait, "w", false, "Wait for test results (shorthand)")
+	flag.BoolVar(&cfg.SubmitResults, "submit-results", false, "Submit local test results to ipv6.army API")
 
 	flag.BoolVar(&cfg.SubmitGH, "submit-gh", false, "Submit results via GitHub CLI (gh)")
 	flag.BoolVar(&cfg.SubmitGit, "submit-git", false, "Submit results via direct git push")
@@ -274,6 +276,11 @@ func parseFlags() *Config {
 	cfg.GitRepo = getConfigValue(cfg.GitRepo, "GIT_REPO", defaultGitRepo)
 	cfg.GitBranch = getConfigValue(cfg.GitBranch, "GIT_BRANCH", orDefault(defaultGitBranch, "main"))
 
+	// Auto-enable result submission when running local tests with API token
+	if cfg.LocalTest && cfg.APIToken != "" && !cfg.SubmitResults {
+		cfg.SubmitResults = true
+	}
+
 	return cfg
 }
 
@@ -302,6 +309,17 @@ func isTruthy(val string) bool {
 		return true
 	}
 	return false
+}
+
+// maskToken masks a token for display, showing only first/last 4 chars
+func maskToken(token string) string {
+	if token == "" {
+		return "<not set>"
+	}
+	if len(token) <= 8 {
+		return "****"
+	}
+	return token[:4] + "****" + token[len(token)-4:]
 }
 
 func run(cfg *Config) error {
@@ -406,6 +424,15 @@ func runLocalTests(cfg *Config) error {
 	fmt.Println("===========================")
 	fmt.Println()
 
+	// Show configuration
+	if cfg.Verbose {
+		fmt.Printf("%sConfiguration:%s\n", c.Cyan, c.Reset)
+		fmt.Printf("  API URL: %s\n", cfg.APIURL)
+		fmt.Printf("  API Token: %s\n", maskToken(cfg.APIToken))
+		fmt.Printf("  Submit Results: %v\n", cfg.SubmitResults)
+		fmt.Println()
+	}
+
 	// Auto-detect test point information
 	fmt.Printf("%sDetecting test point information...%s\n", c.Yellow, c.Reset)
 
@@ -464,13 +491,81 @@ func runLocalTests(cfg *Config) error {
 	// Print detailed results
 	printLocalResults(result, siteResults, ipv4Successes, ipv6Successes, cfg.Verbose)
 
-	// Submit results if enabled
+	// Submit results to ipv6.army API if enabled
+	if cfg.SubmitResults && cfg.APIToken != "" {
+		fmt.Println()
+		submitResultsToAPI(cfg, result, siteResults)
+	}
+
+	// Submit to GitHub if enabled
 	if cfg.SubmitGH || cfg.SubmitGit || cfg.SubmitAPI {
 		fmt.Println()
 		runSubmissions(cfg, result)
 	}
 
 	return nil
+}
+
+// submitResultsToAPI submits local test results to the ipv6.army API
+func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest) {
+	fmt.Printf("%sSubmitting results to ipv6.army API...%s\n", c.Yellow, c.Reset)
+	fmt.Printf("  API URL: %s\n", cfg.APIURL)
+
+	// Build payload with detailed site results
+	payload := map[string]interface{}{
+		"testPointId":   result.TestPointID,
+		"location":      result.Location,
+		"timestamp":     result.Timestamp,
+		"score":         result.Score,
+		"ipv4Success":   result.IPv4Success,
+		"ipv6Success":   result.IPv6Success,
+		"siteTestCount": result.SiteTestCount,
+		"siteResults":   siteResults,
+	}
+	if result.ASN != "" {
+		payload["asn"] = result.ASN
+	}
+	if result.IPv4Prefix != "" {
+		payload["ipv4Prefix"] = result.IPv4Prefix
+	}
+	if result.IPv6Prefix != "" {
+		payload["ipv6Prefix"] = result.IPv6Prefix
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Printf("%s✗ Failed to marshal results: %v%s\n", c.Red, err, c.Reset)
+		return
+	}
+
+	req, err := http.NewRequest("POST", cfg.APIURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Printf("%s✗ Failed to create request: %v%s\n", c.Red, err, c.Reset)
+		return
+	}
+
+	req.Header.Set("Authorization", "Bearer "+cfg.APIToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ipv6perftest/1.0")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("%s✗ Failed to submit results: %v%s\n", c.Red, err, c.Reset)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		fmt.Printf("%s✓ Results submitted to ipv6.army%s\n", c.Green, c.Reset)
+		if cfg.Verbose && len(body) > 0 {
+			fmt.Printf("  Response: %s\n", string(body))
+		}
+	} else {
+		fmt.Printf("%s✗ API submission failed (HTTP %d): %s%s\n", c.Red, resp.StatusCode, string(body), c.Reset)
+	}
 }
 
 // testSiteConnectivity tests both IPv4 and IPv6 connectivity to a site
@@ -523,7 +618,17 @@ func testConnectivity(network, url string, timeout time.Duration) error {
 		},
 	}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	// Set browser-like headers to avoid being blocked
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Connection", "close")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
