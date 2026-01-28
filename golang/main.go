@@ -103,7 +103,7 @@ var testSites = []struct {
 	{"Netflix", "https://www.netflix.com"},
 	{"GitHub", "https://github.com"},
 	{"Cloudflare", "https://www.cloudflare.com"},
-	{"Akamai", "https://akamai.com"},
+	{"Akamai", "https://www.akamai.com"},
 	{"Microsoft", "https://www.microsoft.com"},
 	{"Apple", "https://www.apple.com"},
 	{"Amazon", "https://www.amazon.com"},
@@ -322,6 +322,14 @@ func maskToken(token string) string {
 	return token[:4] + "****" + token[len(token)-4:]
 }
 
+// truncateError shortens error messages for display
+func truncateError(err string) string {
+	if len(err) > 80 {
+		return err[:77] + "..."
+	}
+	return err
+}
+
 func run(cfg *Config) error {
 	// Validate GitHub submission options
 	if err := validateGitHubOptions(cfg); err != nil {
@@ -511,6 +519,28 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 	fmt.Printf("%sSubmitting results to ipv6.army API...%s\n", c.Yellow, c.Reset)
 	fmt.Printf("  API URL: %s\n", cfg.APIURL)
 
+	// Build sites array in the format expected by ipv6.army
+	sites := make([]map[string]interface{}, len(siteResults))
+	for i, site := range siteResults {
+		siteData := map[string]interface{}{
+			"name": site.Name,
+			"url":  site.URL,
+		}
+		// Add IPv4 result
+		if site.IPv4Success {
+			siteData["v4"] = site.IPv4Latency
+		} else {
+			siteData["v4"] = nil
+		}
+		// Add IPv6 result
+		if site.IPv6Success {
+			siteData["v6"] = site.IPv6Latency
+		} else {
+			siteData["v6"] = nil
+		}
+		sites[i] = siteData
+	}
+
 	// Build payload with detailed site results
 	payload := map[string]interface{}{
 		"testPointId":   result.TestPointID,
@@ -520,7 +550,7 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 		"ipv4Success":   result.IPv4Success,
 		"ipv6Success":   result.IPv6Success,
 		"siteTestCount": result.SiteTestCount,
-		"siteResults":   siteResults,
+		"sites":         sites,
 	}
 	if result.ASN != "" {
 		payload["asn"] = result.ASN
@@ -536,6 +566,12 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 	if err != nil {
 		fmt.Printf("%s✗ Failed to marshal results: %v%s\n", c.Red, err, c.Reset)
 		return
+	}
+
+	// Show payload in verbose mode
+	if cfg.Verbose {
+		prettyJSON, _ := json.MarshalIndent(payload, "  ", "  ")
+		fmt.Printf("  Payload:\n  %s\n", string(prettyJSON))
 	}
 
 	req, err := http.NewRequest("POST", cfg.APIURL, bytes.NewBuffer(jsonData))
@@ -677,8 +713,8 @@ func printLocalResults(result *TestResult, siteResults []SiteTest, ipv4Success, 
 		fmt.Printf("%sPer-site Results:%s\n", c.Cyan, c.Reset)
 		fmt.Println("─────────────────────────────────────────────────────────────")
 		fmt.Println()
-		fmt.Printf("  %-20s %s  %s\n", "Site", "IPv4", "IPv6")
-		fmt.Printf("  %-20s %s  %s\n", "────", "────", "────")
+		fmt.Printf("  %-20s %-15s %-15s\n", "Site", "IPv4", "IPv6")
+		fmt.Printf("  %-20s %-15s %-15s\n", "────", "────", "────")
 
 		for _, site := range siteResults {
 			ipv4 := fmt.Sprintf("%s✗%s", c.Red, c.Reset)
@@ -691,7 +727,15 @@ func printLocalResults(result *TestResult, siteResults []SiteTest, ipv4Success, 
 				ipv6 = fmt.Sprintf("%s✓%s %4dms", c.Green, c.Reset, site.IPv6Latency)
 			}
 
-			fmt.Printf("  %-20s %s  %s\n", site.Name, ipv4, ipv6)
+			fmt.Printf("  %-20s %-15s %-15s\n", site.Name, ipv4, ipv6)
+
+			// Show errors for failed tests
+			if site.IPv4Error != "" {
+				fmt.Printf("    %s→ v4 error: %s%s\n", c.Red, truncateError(site.IPv4Error), c.Reset)
+			}
+			if site.IPv6Error != "" {
+				fmt.Printf("    %s→ v6 error: %s%s\n", c.Red, truncateError(site.IPv6Error), c.Reset)
+			}
 		}
 	}
 
