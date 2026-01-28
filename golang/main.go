@@ -90,31 +90,34 @@ type SiteTest struct {
 	IPv6Error   string `json:"ipv6Error,omitempty"`
 }
 
-// Common dual-stack sites to test
+// Sites to test - matches ipv6.army test sites
 var testSites = []struct {
 	Name string
 	URL  string
 }{
-	{"Google", "https://www.google.com"},
-	{"Cloudflare", "https://www.cloudflare.com"},
-	{"Facebook", "https://www.facebook.com"},
-	{"Netflix", "https://www.netflix.com"},
-	{"Apple", "https://www.apple.com"},
-	{"Microsoft", "https://www.microsoft.com"},
-	{"Amazon", "https://www.amazon.com"},
 	{"Wikipedia", "https://www.wikipedia.org"},
-	{"Twitter/X", "https://www.x.com"},
-	{"LinkedIn", "https://www.linkedin.com"},
-	{"GitHub", "https://github.com"},
-	{"Reddit", "https://www.reddit.com"},
-	{"Yahoo", "https://www.yahoo.com"},
-	{"Bing", "https://www.bing.com"},
+	{"Google", "https://www.google.com"},
+	{"Facebook", "https://www.facebook.com"},
 	{"YouTube", "https://www.youtube.com"},
-	{"Instagram", "https://www.instagram.com"},
-	{"WhatsApp", "https://www.whatsapp.com"},
+	{"Netflix", "https://www.netflix.com"},
+	{"GitHub", "https://github.com"},
+	{"Cloudflare", "https://www.cloudflare.com"},
+	{"Akamai", "https://www.akamai.com"},
+	{"Microsoft", "https://www.microsoft.com"},
+	{"Apple", "https://www.apple.com"},
+	{"Amazon", "https://www.amazon.com"},
+	{"Reddit", "https://www.reddit.com"},
+	{"Twitter/X", "https://www.x.com"},
+	{"Cisco", "https://www.cisco.com"},
+	{"Yahoo", "https://www.yahoo.com"},
+	{"Yandex", "https://www.yandex.com"},
 	{"Zoom", "https://zoom.us"},
-	{"Slack", "https://slack.com"},
-	{"Dropbox", "https://www.dropbox.com"},
+	{"CNN", "https://www.cnn.com"},
+	{"ESPN", "https://www.espn.com"},
+	{"Spotify", "https://www.spotify.com"},
+	{"Gitlab", "https://gitlab.com"},
+	{"Codeberg", "https://codeberg.org"},
+	{"Dockerhub", "https://hub.docker.com"},
 }
 
 // TestPointInfo holds auto-detected network information
