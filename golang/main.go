@@ -255,8 +255,8 @@ func parseFlags() *Config {
 		os.Exit(0)
 	}
 
-	// Apply local test default if compiled in
-	if !cfg.LocalTest && defaultLocalTest == "true" {
+	// Apply local test default if compiled in (accepts: true, yes, 1, on)
+	if !cfg.LocalTest && isTruthy(defaultLocalTest) {
 		cfg.LocalTest = true
 	}
 
@@ -290,6 +290,15 @@ func orDefault(val, def string) string {
 		return val
 	}
 	return def
+}
+
+// isTruthy returns true for common truthy string values
+func isTruthy(val string) bool {
+	switch strings.ToLower(val) {
+	case "true", "yes", "1", "on":
+		return true
+	}
+	return false
 }
 
 func run(cfg *Config) error {
