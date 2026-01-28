@@ -102,7 +102,7 @@ var testSites = []struct {
 	{"Netflix", "https://www.netflix.com"},
 	{"GitHub", "https://github.com"},
 	{"Cloudflare", "https://www.cloudflare.com"},
-	{"Akamai", "https://www.akamai.com"},
+	{"Akamai", "https://akamai.com"},
 	{"Microsoft", "https://www.microsoft.com"},
 	{"Apple", "https://www.apple.com"},
 	{"Amazon", "https://www.amazon.com"},
@@ -1080,10 +1080,22 @@ func submitViaGitPush(cfg *Config, result *TestResult) {
 	filename := fmt.Sprintf("test-runs/individual/%s-%s.json", result.TestPointID, time.Now().UTC().Format("2006-01-02"))
 	resultJSON, _ := json.MarshalIndent(result, "", "  ")
 
+	// Helper to run git commands with output capture
+	runGit := func(args ...string) error {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tempDir
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			if len(output) > 0 {
+				fmt.Printf("%s  git %s: %s%s\n", c.Red, args[0], strings.TrimSpace(string(output)), c.Reset)
+			}
+			return err
+		}
+		return nil
+	}
+
 	// Clone
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", cfg.GitBranch, cfg.GitRepo, ".")
-	cmd.Dir = tempDir
-	if err := cmd.Run(); err != nil {
+	if err := runGit("clone", "--depth", "1", "--branch", cfg.GitBranch, cfg.GitRepo, "."); err != nil {
 		fmt.Printf("%s✗ Failed to clone repository: %v%s\n", c.Red, err, c.Reset)
 		return
 	}
@@ -1099,20 +1111,22 @@ func submitViaGitPush(cfg *Config, result *TestResult) {
 		return
 	}
 
-	// Git add, commit, push
-	commands := [][]string{
-		{"git", "add", filename},
-		{"git", "commit", "-m", fmt.Sprintf("Add test results for %s - %s", result.TestPointID, time.Now().UTC().Format("2006-01-02"))},
-		{"git", "push", "origin", cfg.GitBranch},
+	// Git add
+	if err := runGit("add", filename); err != nil {
+		fmt.Printf("%s✗ Failed to stage file: %v%s\n", c.Red, err, c.Reset)
+		return
 	}
 
-	for _, args := range commands {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Dir = tempDir
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("%s✗ Failed to push results: %v%s\n", c.Red, err, c.Reset)
-			return
-		}
+	// Git commit
+	if err := runGit("commit", "-m", fmt.Sprintf("Add test results for %s - %s", result.TestPointID, time.Now().UTC().Format("2006-01-02"))); err != nil {
+		fmt.Printf("%s✗ Failed to commit: %v%s\n", c.Red, err, c.Reset)
+		return
+	}
+
+	// Git push
+	if err := runGit("push", "origin", cfg.GitBranch); err != nil {
+		fmt.Printf("%s✗ Failed to push: %v%s\n", c.Red, err, c.Reset)
+		return
 	}
 
 	fmt.Printf("%s✓ Results pushed to git repository%s\n", c.Green, c.Reset)
