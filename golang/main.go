@@ -543,8 +543,8 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 
 	// Build payload matching ipv6.army API structure
 	payload := map[string]interface{}{
+		"testPointId": result.TestPointID,
 		"testPoint": map[string]interface{}{
-			"id":         result.TestPointID,
 			"location":   result.Location,
 			"asn":        result.ASN,
 			"ipv4Prefix": result.IPv4Prefix,
