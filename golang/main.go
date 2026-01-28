@@ -519,47 +519,44 @@ func submitResultsToAPI(cfg *Config, result *TestResult, siteResults []SiteTest)
 	fmt.Printf("%sSubmitting results to ipv6.army API...%s\n", c.Yellow, c.Reset)
 	fmt.Printf("  API URL: %s\n", cfg.APIURL)
 
-	// Build sites array in the format expected by ipv6.army
-	sites := make([]map[string]interface{}, len(siteResults))
+	// Build siteTests array in the format expected by ipv6.army
+	siteTests := make([]map[string]interface{}, len(siteResults))
 	for i, site := range siteResults {
 		siteData := map[string]interface{}{
 			"name": site.Name,
 			"url":  site.URL,
 		}
-		// Add IPv4 result
+		// Add IPv4 result (latency in ms, or null if failed)
 		if site.IPv4Success {
 			siteData["v4"] = site.IPv4Latency
 		} else {
 			siteData["v4"] = nil
 		}
-		// Add IPv6 result
+		// Add IPv6 result (latency in ms, or null if failed)
 		if site.IPv6Success {
 			siteData["v6"] = site.IPv6Latency
 		} else {
 			siteData["v6"] = nil
 		}
-		sites[i] = siteData
+		siteTests[i] = siteData
 	}
 
-	// Build payload with detailed site results
+	// Build payload matching ipv6.army API structure
 	payload := map[string]interface{}{
-		"testPointId":   result.TestPointID,
-		"location":      result.Location,
-		"timestamp":     result.Timestamp,
-		"score":         result.Score,
-		"ipv4Success":   result.IPv4Success,
-		"ipv6Success":   result.IPv6Success,
-		"siteTestCount": result.SiteTestCount,
-		"sites":         sites,
-	}
-	if result.ASN != "" {
-		payload["asn"] = result.ASN
-	}
-	if result.IPv4Prefix != "" {
-		payload["ipv4Prefix"] = result.IPv4Prefix
-	}
-	if result.IPv6Prefix != "" {
-		payload["ipv6Prefix"] = result.IPv6Prefix
+		"testPoint": map[string]interface{}{
+			"id":         result.TestPointID,
+			"location":   result.Location,
+			"asn":        result.ASN,
+			"ipv4Prefix": result.IPv4Prefix,
+			"ipv6Prefix": result.IPv6Prefix,
+		},
+		"results": map[string]interface{}{
+			"score":       result.Score,
+			"ipv4Success": result.IPv4Success,
+			"ipv6Success": result.IPv6Success,
+			"siteTests":   siteTests,
+		},
+		"timestamp": result.Timestamp,
 	}
 
 	jsonData, err := json.Marshal(payload)
