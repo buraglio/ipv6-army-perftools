@@ -103,7 +103,6 @@ var testSites = []struct {
 	{"Netflix", "https://www.netflix.com"},
 	{"GitHub", "https://github.com"},
 	{"Cloudflare", "https://www.cloudflare.com"},
-	{"Akamai", "https://www.akamai.com"},
 	{"Microsoft", "https://www.microsoft.com"},
 	{"Apple", "https://www.apple.com"},
 	{"Amazon", "https://www.amazon.com"},
