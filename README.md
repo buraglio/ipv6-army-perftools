@@ -109,7 +109,8 @@ make build-all API_TOKEN=xxx
 # Outputs in build/ directory:
 #   ipv6perftest-linux-amd64
 #   ipv6perftest-linux-arm64
-#   ipv6perftest-linux-arm
+#   ipv6perftest-linux-arm6    (ARMv6: Raspberry Pi Zero/1)
+#   ipv6perftest-linux-arm7    (ARMv7: Raspberry Pi 2+)
 #   ipv6perftest-darwin-amd64
 #   ipv6perftest-darwin-arm64
 #   ipv6perftest-freebsd-amd64

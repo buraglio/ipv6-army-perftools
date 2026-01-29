@@ -71,11 +71,12 @@ ifneq ($(LOCAL_TEST),)
 	LDFLAGS += -X main.defaultLocalTest=$(LOCAL_TEST)
 endif
 
-# Platforms for cross-compilation
+# Platforms for cross-compilation (arm6 = ARMv6 for Pi Zero/1, arm7 = ARMv7 for Pi 2+)
 PLATFORMS := \
 	linux/amd64 \
 	linux/arm64 \
-	linux/arm \
+	linux/arm6 \
+	linux/arm7 \
 	darwin/amd64 \
 	darwin/arm64 \
 	freebsd/amd64 \
@@ -109,10 +110,13 @@ build-all: clean
 	@for platform in $(PLATFORMS); do \
 		GOOS=$${platform%/*}; \
 		GOARCH=$${platform#*/}; \
-		output=$(BUILD_DIR)/$(APP_NAME)-$${GOOS}-$${GOARCH}; \
+		GOARM=""; \
+		if [ "$${GOARCH}" = "arm6" ]; then GOARCH=arm; GOARM=6; fi; \
+		if [ "$${GOARCH}" = "arm7" ]; then GOARCH=arm; GOARM=7; fi; \
+		output=$(BUILD_DIR)/$(APP_NAME)-$${GOOS}-$${platform#*/}; \
 		if [ "$${GOOS}" = "windows" ]; then output="$${output}.exe"; fi; \
 		echo "  Building $${output}..."; \
-		GOOS=$${GOOS} GOARCH=$${GOARCH} CGO_ENABLED=$(CGO_ENABLED) \
+		GOOS=$${GOOS} GOARCH=$${GOARCH} GOARM=$${GOARM} CGO_ENABLED=$(CGO_ENABLED) \
 			$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $${output} . || exit 1; \
 	done
 	@echo "All binaries built in $(BUILD_DIR)/"
